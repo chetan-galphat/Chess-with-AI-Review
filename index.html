@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Adaptive Chess Engine</title>
+    <link rel="icon" href="https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg">
+
+    <link rel="stylesheet"
+      href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+
+    <style>
+        body {
+            margin: 0;
+            padding: 32px;
+            background: #1e1e1e;
+            color: #fff;
+            font-family: system-ui, sans-serif;
+            display: flex;
+            gap: 32px;
+        }
+
+        #board {
+            width: 420px;
+        }
+
+        #panel {
+            width: 460px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #current {
+            background: #2a2a2a;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            min-height: 70px;
+        }
+
+        #history {
+            background: #121212;
+            padding: 12px;
+            border-radius: 8px;
+            overflow-y: auto;
+            max-height: 420px;
+        }
+
+        .entry {
+            border-bottom: 1px solid #333;
+            padding-bottom: 8px;
+            margin-bottom: 8px;
+        }
+
+        .entry:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+
+        .meta {
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+<div id="board"></div>
+
+<div id="panel">
+    <div id="current">Make a move to see feedback.</div>
+    <div id="history"></div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+<script>
+    const game = new Chess()
+    const boardEl = document.getElementById("board")
+    const currentBox = document.getElementById("current")
+    const historyBox = document.getElementById("history")
+
+    const board = Chessboard(boardEl, {
+        draggable: true,
+        position: 'start',
+        pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+
+        onDragStart: function (source, piece) {
+            if (game.game_over()) return false
+            if (piece.startsWith('b')) return false
+        },
+
+        onDrop: function (source, target) {
+            const moveUci = source + target
+
+            currentBox.textContent = "Analyzing..."
+
+            fetch("http://127.0.0.1:8000/analyze_and_move", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    fen: game.fen(),       // BEFORE move
+                    user_move: moveUci
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    currentBox.textContent = data.error
+                    return
+                }
+
+                // Backend is authoritative
+                game.load(data.fen)
+                board.position(data.fen)
+
+                currentBox.textContent = data.explanation
+
+                const last = data.history[data.history.length - 1]
+
+                historyBox.innerHTML += `
+                    <div class="entry">
+                        <strong>Move ${data.history.length}: ${last.move}</strong><br>
+                        ${last.explanation}
+                        <div class="meta">
+                            ${last.phase} · ${last.quality}
+                        </div>
+                    </div>
+                `
+
+                historyBox.scrollTop = historyBox.scrollHeight
+            })
+            .catch(() => {
+                currentBox.textContent = "Server not running."
+            })
+
+            // Prevent local move — server decides
+            return 'snapback'
+        }
+    })
+</script>
+
+</body>
+</html>
